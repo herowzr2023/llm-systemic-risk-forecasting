@@ -158,4 +158,4 @@ These files permit verification of the reported evaluation and artifacts without
 
 ## Citation and Use
 
-This private repository is intended for editorial review and controlled research replication. Before public release, confirm the redistribution conditions of all included market, macro-financial, and platform-derived data and add the final article citation and an explicit software/data license.
+This public repository is provided for transparent research replication. Public access does not grant direct write permission: external contributions should be proposed through pull requests, and repository changes remain subject to approval by the repository owner. Users must observe the redistribution conditions of the included market, macro-financial, and platform-derived data. The final article citation and an explicit software/data license will be added when the publication record is available.
