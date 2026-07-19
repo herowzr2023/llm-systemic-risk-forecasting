@@ -1,0 +1,17 @@
+{
+  "models": [
+    "hfl/chinese-roberta-wwm-ext",
+    "hfl/chinese-roberta-wwm-ext-large",
+    "hfl/chinese-bert-wwm-ext",
+    "bert-base-chinese"
+  ],
+  "input_csv": "../data/sentiment_labels_public.csv",
+  "text_column": "text",
+  "label_column": "sen",
+  "output_dir": "outputs",
+  "epochs": 2,
+  "batch_size": 32,
+  "learning_rate": 2e-5,
+  "random_seed": 42
+}
+

@@ -1,0 +1,154 @@
+{
+  "main_script": "libs/informer/main_informer.py",
+  "bank_mapping_csv": "data/raw/bank_code_mapping.csv",
+  "results_dir": "results",
+  "common_args": {
+    "root_path": "outputs/05_forecasting_datasets",
+    "model": "informer",
+    "attn": "prob",
+    "freq": "d",
+    "features": "MS",
+    "d_model": 1024,
+    "n_heads": 8,
+    "e_layers": 2,
+    "d_layers": 1,
+    "d_ff": 2048,
+    "factor": 5,
+    "embed": "timeF",
+    "scaler": "minmax"
+  },
+  "jobs": [
+    {
+      "name": "aggregate_1d_with_sentiment",
+      "description_text": "Aggregate 1-day Informer with full aggregate predictors and sentiment.",
+      "target_scope": "aggregate",
+      "training_times": 15,
+      "data": "custom_sen",
+      "data_path": "ALL_final_data_with_sen_full_predictors.csv",
+      "predict_col": "ALL_CoVaR",
+      "description": "ALL_with_sen_full_predictors_{iteration}",
+      "args": {
+        "seq_len": 5,
+        "label_len": 2,
+        "pred_len": 1
+      },
+      "metrics_output_csv": "outputs/06_informer/aggregate_1d_with_sentiment_metrics.csv"
+    },
+    {
+      "name": "aggregate_5d_with_sentiment",
+      "description_text": "Aggregate 5-day Informer with full aggregate predictors and sentiment.",
+      "target_scope": "aggregate",
+      "training_times": 30,
+      "data": "custom_sen",
+      "data_path": "ALL_final_data_with_sen_full_predictors.csv",
+      "predict_col": "ALL_CoVaR",
+      "description": "ALL_with_sen_full_predictors_{iteration}",
+      "args": {
+        "seq_len": 10,
+        "label_len": 3,
+        "pred_len": 5
+      },
+      "metrics_output_csv": "outputs/06_informer/aggregate_5d_with_sentiment_metrics.csv"
+    },
+    {
+      "name": "aggregate_1d_without_sentiment",
+      "description_text": "Aggregate 1-day Informer with full aggregate predictors and no sentiment variables.",
+      "target_scope": "aggregate",
+      "training_times": 15,
+      "data": "custom",
+      "data_path": "ALL_final_data_full_predictors.csv",
+      "predict_col": "ALL_CoVaR",
+      "description": "ALL_without_sen_full_predictors_{iteration}",
+      "args": {
+        "seq_len": 5,
+        "label_len": 2,
+        "pred_len": 1
+      },
+      "metrics_output_csv": "outputs/06_informer/aggregate_1d_without_sentiment_metrics.csv"
+    },
+    {
+      "name": "aggregate_5d_without_sentiment",
+      "description_text": "Aggregate 5-day Informer with full aggregate predictors and no sentiment variables.",
+      "target_scope": "aggregate",
+      "training_times": 30,
+      "data": "custom",
+      "data_path": "ALL_final_data_full_predictors.csv",
+      "predict_col": "ALL_CoVaR",
+      "description": "ALL_without_sen_full_predictors_{iteration}",
+      "args": {
+        "seq_len": 10,
+        "label_len": 3,
+        "pred_len": 5
+      },
+      "metrics_output_csv": "outputs/06_informer/aggregate_5d_without_sentiment_metrics.csv"
+    },
+    {
+      "name": "banks_1d_with_sentiment",
+      "description_text": "Bank-level 1-day Informer with sentiment.",
+      "target_scope": "banks",
+      "training_times": 30,
+      "data": "custom_sen",
+      "data_path": "{bank}_final_data_with_sen.csv",
+      "predict_col": "{bank}_CoVaR",
+      "description": "{bank}_with_sen_{iteration}",
+      "args": {
+        "seq_len": 5,
+        "label_len": 2,
+        "pred_len": 1
+      },
+      "variants": [
+        {
+          "name": "with_sentiment",
+          "sentiment_label": "with sentiment",
+          "data": "custom_sen",
+          "data_path": "{bank}_final_data_with_sen.csv",
+          "predict_col": "{bank}_CoVaR",
+          "description": "{bank}_with_sen_{iteration}"
+        },
+        {
+          "name": "without_sentiment",
+          "sentiment_label": "without sentiment",
+          "data": "custom",
+          "data_path": "{bank}_final_data.csv",
+          "predict_col": "{bank}_CoVaR",
+          "description": "{bank}_without_sen_{iteration}"
+        }
+      ],
+      "metrics_output_csv": "outputs/06_informer/banks_1d_with_sentiment_metrics.csv"
+    },
+    {
+      "name": "banks_5d_with_sentiment",
+      "description_text": "Bank-level 5-day Informer with sentiment.",
+      "target_scope": "banks",
+      "training_times": 30,
+      "data": "custom_sen",
+      "data_path": "{bank}_final_data_with_sen.csv",
+      "predict_col": "{bank}_CoVaR",
+      "description": "{bank}_with_sen_{iteration}",
+      "args": {
+        "seq_len": 10,
+        "label_len": 3,
+        "pred_len": 5
+      },
+      "variants": [
+        {
+          "name": "with_sentiment",
+          "sentiment_label": "with sentiment",
+          "data": "custom_sen",
+          "data_path": "{bank}_final_data_with_sen.csv",
+          "predict_col": "{bank}_CoVaR",
+          "description": "{bank}_with_sen_{iteration}"
+        },
+        {
+          "name": "without_sentiment",
+          "sentiment_label": "without sentiment",
+          "data": "custom",
+          "data_path": "{bank}_final_data.csv",
+          "predict_col": "{bank}_CoVaR",
+          "description": "{bank}_without_sen_{iteration}"
+        }
+      ],
+      "metrics_output_csv": "outputs/06_informer/banks_5d_with_sentiment_metrics.csv"
+    }
+  ]
+}

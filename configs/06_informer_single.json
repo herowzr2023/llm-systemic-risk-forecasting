@@ -1,0 +1,26 @@
+{
+  "main_script": "libs/informer/main_informer.py",
+  "args": {
+    "model": "informer",
+    "data": "custom_sen",
+    "root_path": "outputs/05_forecasting_datasets",
+    "path": "ALL_final_data_with_sen_full_predictors.csv",
+    "predict_col": "ALL_CoVaR",
+    "features": "MS",
+    "freq": "d",
+    "seq_len": 5,
+    "label_len": 2,
+    "pred_len": 1,
+    "d_model": 1024,
+    "n_heads": 8,
+    "e_layers": 2,
+    "d_layers": 1,
+    "d_ff": 2048,
+    "factor": 5,
+    "attn": "prob",
+    "embed": "timeF",
+    "scaler": "minmax",
+    "itr": 1,
+    "des": "aggregate_1d_public"
+  }
+}

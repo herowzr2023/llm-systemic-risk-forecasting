@@ -1,0 +1,14 @@
+{
+  "inference_script": "libs/sentiment_inference/inference.py",
+  "model_path": "outputs/02_lora_sft/trained_lora",
+  "input_patterns": [
+    "data/private/forum_posts/processed_*.csv"
+  ],
+  "output_dir": "outputs/03_sentiment_predictions",
+  "content_col": "title",
+  "target_col": "sen",
+  "with_prompt": true,
+  "gpus": "0",
+  "load_in_4bit": false,
+  "load_in_8bit": false
+}

@@ -1,0 +1,15 @@
+{
+  "covar_csv": "data/raw/institution_covar_daily.csv",
+  "final_stats_csv": "data/intermediate/daily_sentiment_indicators.csv",
+  "bank_mapping_csv": "data/raw/bank_code_mapping.csv",
+  "price_csv": "data/raw/institution_market_data_daily.csv",
+  "connectedness_from_csv": "data/raw/dy_connectedness_from_daily.csv",
+  "connectedness_to_csv": "data/raw/dy_connectedness_to_daily.csv",
+  "connectedness_net_csv": "data/raw/dy_connectedness_net_daily.csv",
+  "macro_csv": "data/raw/macro_yields_daily.csv",
+  "credit_csv": "data/raw/interbank_rate_3m_daily.csv",
+  "volatility_csv": "data/raw/market_volatility_daily.csv",
+  "output_dir": "outputs/05_forecasting_datasets",
+  "target_scale": -100.0,
+  "build_legacy_system": true
+}

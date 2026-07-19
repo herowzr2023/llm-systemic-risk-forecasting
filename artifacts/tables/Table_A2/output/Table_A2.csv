@@ -1,0 +1,15 @@
+﻿Data set,Model,Accuracy,Precision,Recall,F1-score
+Training set,Llama-3-Chinese-8B-Instruct-v3-emotion,0.993,0.993,0.993,0.993
+Training set,Llama-3-Chinese-8B-Instruct-v2,0.665,0.688,0.665,0.638
+Training set,Llama-3-Chinese-8B-Instruct-v3,0.702,0.741,0.702,0.682
+Training set,Llama-3-Chinese-8B-Instruct,0.728,0.729,0.728,0.720
+Training set,Llama-3-Chinese-8B,0.399,0.368,0.399,0.301
+Training set,Llama-3-8B-Instruct,0.529,0.624,0.529,0.474
+Training set,Llama-3-8B,0.384,0.474,0.384,0.213
+Held-out test set,Llama-3-Chinese-8B-Instruct-v3-emotion,0.805,0.813,0.805,0.807
+Held-out test set,Llama-3-Chinese-8B-Instruct-v2,0.648,0.669,0.648,0.622
+Held-out test set,Llama-3-Chinese-8B-Instruct-v3,0.679,0.722,0.679,0.659
+Held-out test set,Llama-3-Chinese-8B-Instruct,0.717,0.717,0.717,0.706
+Held-out test set,Llama-3-Chinese-8B,0.410,0.402,0.410,0.323
+Held-out test set,Llama-3-8B-Instruct,0.503,0.631,0.503,0.455
+Held-out test set,Llama-3-8B,0.396,0.157,0.396,0.225

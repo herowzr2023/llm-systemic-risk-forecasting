@@ -1,0 +1,10 @@
+{
+  "base_csv": "data/raw/sentiment_labels_public.csv",
+  "output_dir": "outputs/01_label_split",
+  "text_col": "text",
+  "label_col": "sen",
+  "validation_size": 0.1,
+  "random_state": 42,
+  "stratify": true,
+  "instruction": "判断下面文本的情绪，只回答正面、中性或负面。"
+}

@@ -1,0 +1,8 @@
+﻿One-day-ahead forecast,One-day-ahead forecast,One-day-ahead forecast,One-day-ahead forecast,One-day-ahead forecast,One-day-ahead forecast
+,Persistence,AR(1),ETS,GBR,PatchTST
+MAE,-3.473***,-3.507***,-3.473***,-2.627***,-8.877***
+MSE,-1.881*,-1.882*,-1.881*,-1.669*,-6.389***
+Five-day-ahead forecast,Five-day-ahead forecast,Five-day-ahead forecast,Five-day-ahead forecast,Five-day-ahead forecast,Five-day-ahead forecast
+,Persistence,AR(1),ETS,GBR,PatchTST
+MAE,-1.499,-1.574,-1.499,-3.642***,-4.857***
+MSE,-2.245**,-2.091**,-2.245**,-2.629***,-4.487***

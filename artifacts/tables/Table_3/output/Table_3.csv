@@ -1,0 +1,3 @@
+﻿Error term,Informer,Persistence,AR(1),ETS,GBR,PatchTST,IMP
+MSE (×10⁻⁴),3.95,4.60,4.58,4.60,4.38,7.59,9.92%
+MAE (×10⁻²),1.46,1.62,1.62,1.62,1.57,2.04,6.81%

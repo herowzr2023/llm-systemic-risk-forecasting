@@ -1,0 +1,13 @@
+{
+  "prediction_glob": "outputs/03_sentiment_predictions/*.csv",
+  "audit_csv": "outputs/04_daily_sentiment/prediction_input_audit.csv",
+  "merged_predictions_csv": "outputs/04_daily_sentiment/merged_predictions.csv",
+  "fixed_predictions_csv": "outputs/04_daily_sentiment/cleaned_predictions.csv",
+  "final_stats_csv": "data/intermediate/daily_sentiment_indicators.csv",
+  "date_col": "pub_date",
+  "bank_col": "bank_code",
+  "prediction_col": "predict",
+  "read_col": "read_num",
+  "comment_col": "comments_num",
+  "date_corrections": {}
+}

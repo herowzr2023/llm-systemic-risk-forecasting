@@ -1,0 +1,83 @@
+{
+  "target_col": "ALL_CoVaR",
+  "date_col": "date",
+  "train_ratio": 0.7,
+  "normalization": "minmax",
+  "random_seed": 2024,
+  "feature_columns": [
+    "risk_receiving",
+    "risk_spillover",
+    "net_risk_value",
+    "ALL_市盈率",
+    "ALL_市净率",
+    "ALL_市销率",
+    "ALL_市现率",
+    "LS",
+    "YS",
+    "CS",
+    "VIX",
+    "Market_Return",
+    "Total_Count",
+    "Emotional_Skew",
+    "Weighted_Emotional_Skew_Read",
+    "Weighted_Emotional_Skew_Comment"
+  ],
+  "models": [
+    "Persistence",
+    "AR(1)",
+    "ETS",
+    "GBR",
+    "PatchTST"
+  ],
+  "model_settings": {
+    "GBR": {
+      "n_estimators": 100,
+      "learning_rate": 0.1,
+      "max_depth": 3
+    },
+    "PatchTST": {
+      "encoder_layers": 2,
+      "n_heads": 4,
+      "hidden_size": 128,
+      "linear_hidden_size": 256,
+      "dropout": 0.1,
+      "fc_dropout": 0.1,
+      "head_dropout": 0.0,
+      "attn_dropout": 0.0,
+      "patch_len": 3,
+      "stride": 1,
+      "revin": true,
+      "revin_affine": false,
+      "revin_subtract_last": true,
+      "max_steps": 500,
+      "learning_rate": 0.0001,
+      "batch_size": 32,
+      "windows_batch_size": 32,
+      "val_check_steps": 50,
+      "early_stop_patience_steps": -1,
+      "accelerator": "auto",
+      "devices": 1,
+      "enable_progress_bar": true
+    }
+  },
+  "jobs": [
+    {
+      "name": "one_step",
+      "description": "One-step comparison on the reported sample.",
+      "baseline_csv": "data/intermediate/informer_baseline_1d.csv",
+      "data_csv": "outputs/05_forecasting_datasets/ALL_final_data_with_sen_full_predictors.csv",
+      "output_csv": "results/complete_base_1d_predictions.csv",
+      "lead": 1,
+      "lags": 5
+    },
+    {
+      "name": "five_step",
+      "description": "Five-step comparison on the reported sample.",
+      "baseline_csv": "data/intermediate/informer_baseline_5d.csv",
+      "data_csv": "outputs/05_forecasting_datasets/ALL_final_data_with_sen_full_predictors.csv",
+      "output_csv": "results/complete_base_5d_predictions.csv",
+      "lead": 5,
+      "lags": 10
+    }
+  ]
+}

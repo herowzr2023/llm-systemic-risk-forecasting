@@ -1,0 +1,6 @@
+﻿Index,ICBC,ICBC,Banking sector
+Index,SR proxy,DY spillover To,SR proxy
+Sentiment direction,0.106***,0.002,-0.001
+Attention-based intensity,-0.113***,0.269***,-0.185***
+Exposure-based intensity,0.036*,0.022,-0.041**
+Engagement-based intensity,0.081***,-0.101***,-0.011
