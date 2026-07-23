@@ -23,6 +23,23 @@ where a larger value indicates higher bank-level systemic risk. Forecasts are pr
 | `artifacts/` | Independent generators, data, and outputs for reproducible tables and figures. |
 | `outputs/` | Default destination for newly generated pipeline outputs. |
 
+## Raw Data Overview
+
+| File | Data |
+|---|---|
+| [`bank_code_mapping.csv`](data/raw/bank_code_mapping.csv) | Mapping between bank codes and bank names. |
+| [`dy_connectedness_from_daily.csv`](data/raw/dy_connectedness_from_daily.csv) | Daily directional connectedness received by each institution from the rest of the system. |
+| [`dy_connectedness_net_daily.csv`](data/raw/dy_connectedness_net_daily.csv) | Daily net directional connectedness for each institution. |
+| [`dy_connectedness_to_daily.csv`](data/raw/dy_connectedness_to_daily.csv) | Daily directional connectedness transmitted by each institution to the rest of the system. |
+| [`institution_covar_daily.csv`](data/raw/institution_covar_daily.csv) | Daily institution-level CoVaR estimates. |
+| [`institution_market_data_daily.csv`](data/raw/institution_market_data_daily.csv) | Daily market data for the sampled financial institutions. |
+| [`interbank_rate_3m_daily.csv`](data/raw/interbank_rate_3m_daily.csv) | Daily three-month interbank rate. |
+| [`macro_yields_daily.csv`](data/raw/macro_yields_daily.csv) | Daily government- and corporate-bond yields at selected maturities. |
+| [`market_volatility_daily.csv`](data/raw/market_volatility_daily.csv) | Daily market close, log return, and volatility series. |
+| [`sentiment_labels_public.csv`](data/raw/sentiment_labels_public.csv) | Public forum-text sample and its sentiment labels. |
+
+For the forum data, both the comment count and the view count for each post are measured on the post's publication date.
+
 ## Environment
 
 Python 3.10 is recommended. For data processing, evaluation, and table/figure reproduction:
@@ -135,28 +152,7 @@ python artifacts/run_all.py
 
 The included generators cover Tables 3-5, Tables A2-A4, Tables A6-A7, Figure 2, and Figures A1-A2. The manuscript reports only Informer, persistence, AR(1), exponential smoothing, gradient boosting regression, and PatchTST in the principal model-comparison artifacts, while the archived result files retain the complete experiment record.
 
-## Archived Results
-
-The `results/` directory includes:
-
-- one- and five-day target-date prediction files;
-- model-comparison accuracy metrics;
-- Diebold-Mariano test outputs;
-- classifier-evaluation results;
-- institution-level early-warning summaries; and
-- the empirical datasets used by the reproducible table and figure scripts.
-
-These files permit verification of the reported evaluation and artifacts without rerunning LoRA, deep-learning inference, or Informer training.
-
 ## Reproducibility Notes
 
-- Configuration files use repository-relative paths and contain no machine-specific absolute paths.
-- Random seeds and chronological data splits are specified in the relevant configurations.
-- Standardization parameters are estimated from the training sample and then applied to validation and test samples.
-- Forum records are assigned by `pub_date`; `read_num` and `comments_num` are the counts recorded for a post on its publication date.
-- The public fields do not include a counter-vintage timestamp. Accordingly, the repository does not claim that a separate after-close snapshot was verified for every historical date or that later cumulative counter updates can be identified and excluded.
-- Deep-learning results may vary slightly across GPU hardware, CUDA, cuDNN, and PyTorch versions despite fixed seeds.
-
-## Citation and Use
-
-This public repository is provided for transparent research replication. Public access does not grant direct write permission: external contributions should be proposed through pull requests, and repository changes remain subject to approval by the repository owner. Users must observe the redistribution conditions of the included market, macro-financial, and platform-derived data. The final article citation and an explicit software/data license will be added when the publication record is available.
+- Random seeds and chronological data splits are explicitly specified in the relevant configuration files.
+- Even with fixed random seeds, deep-learning results may vary slightly because of differences in GPU hardware, CUDA, cuDNN, and PyTorch versions.
