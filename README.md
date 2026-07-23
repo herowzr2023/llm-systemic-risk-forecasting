@@ -71,7 +71,7 @@ Remove `--dry-run` to start GPU training.
 python code/03_predict_sentiment.py --config configs/03_inference.json --dry-run
 ```
 
-Remove `--dry-run` after configuring the fine-tuned model and the source forum-post files. Raw forum text and model weights are not included because of platform-use, privacy, and storage constraints.
+Remove `--dry-run` after configuring the fine-tuned model and the source forum-post files. Raw forum text, the complete post-level Eastmoney records, and model weights are not included. The complete Eastmoney records are not publicly redistributed because the source material and platform fields are subject to copyright and platform-use restrictions; privacy and storage constraints also apply to the text and model artifacts.
 
 ### 4. Merge predictions and construct daily sentiment indicators
 
@@ -115,7 +115,7 @@ python code/07_run_model_comparison.py --config configs/07_model_comparison.json
 python code/07_run_model_comparison.py --config configs/07_model_comparison.json --job one_step --dry-run
 ```
 
-The comparison design includes persistence, AR(1), exponential smoothing, gradient boosting regression, and PatchTST. Their predictions are aligned with the archived Informer predictions by forecast origin, target date, and horizon.
+The comparison design includes persistence, AR(1), exponential smoothing, gradient boosting regression, and PatchTST. Their predictions are aligned with the archived Informer predictions by forecast origin, target date, and horizon. The current PatchTST implementation uses one multivariate input window containing aggregate SR history and all 16 configured non-target predictors. Each channel is patch-encoded with shared Transformer weights, and the joint prediction head uses all 17 channels to forecast aggregate SR. This code correction does not regenerate or overwrite the archived prediction and evaluation files.
 
 ### 8. Evaluate predictive accuracy
 
@@ -153,7 +153,8 @@ These files permit verification of the reported evaluation and artifacts without
 - Configuration files use repository-relative paths and contain no machine-specific absolute paths.
 - Random seeds and chronological data splits are specified in the relevant configurations.
 - Standardization parameters are estimated from the training sample and then applied to validation and test samples.
-- Forecast predictors are aligned to the forecast origin; sentiment view and comment counts refer to information recorded for the post's publication day.
+- Forum records are assigned by `pub_date`; `read_num` and `comments_num` are the counts recorded for a post on its publication date.
+- The public fields do not include a counter-vintage timestamp. Accordingly, the repository does not claim that a separate after-close snapshot was verified for every historical date or that later cumulative counter updates can be identified and excluded.
 - Deep-learning results may vary slightly across GPU hardware, CUDA, cuDNN, and PyTorch versions despite fixed seeds.
 
 ## Citation and Use

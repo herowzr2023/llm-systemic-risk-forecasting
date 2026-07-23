@@ -9,5 +9,4 @@ sentencepiece>=0.2
 protobuf>=4.25,<6
 xgboost>=2.0,<4
 lightgbm>=4.0,<5
-neuralforecast>=1.7,<4
 lightning>=2.2,<2.6

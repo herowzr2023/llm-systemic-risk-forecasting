@@ -438,86 +438,183 @@ def _patchtst_predictions(
     seed: int,
 ) -> pd.DataFrame:
     try:
-        from neuralforecast import NeuralForecast
-        from neuralforecast.models import PatchTST
+        import torch
+        import torch.nn as nn
+        from torch.utils.data import DataLoader, TensorDataset
     except ImportError as error:
-        raise RuntimeError("PatchTST requires neuralforecast; install requirements_full_training.txt") from error
+        raise RuntimeError("PatchTST requires PyTorch; install requirements_full_training.txt") from error
 
     value_columns = [column for column in prepared.normalized.columns if column != date_col]
-    panel = pd.concat(
-        [
-            pd.DataFrame(
-                {
-                    "unique_id": column,
-                    "ds": np.arange(len(prepared.normalized), dtype=int),
-                    "y": prepared.normalized[column].to_numpy(dtype=float),
-                }
-            )
-            for column in value_columns
-        ],
-        ignore_index=True,
-    )
+    predictor_columns = [column for column in value_columns if column != target_col]
+    expected_covariates = int(settings.get("expected_historical_covariates", 16))
+    if len(predictor_columns) != expected_covariates:
+        raise ValueError(
+            "PatchTST must receive the configured historical covariates together with SR: "
+            f"expected {expected_covariates}, found {len(predictor_columns)}"
+        )
+    target_index = value_columns.index(target_col)
+    channel_count = len(value_columns)
+    if prepared.sequences.shape[2] != channel_count:
+        raise ValueError(
+            "PatchTST input-channel mismatch: "
+            f"prepared {prepared.sequences.shape[2]} channels for {channel_count} variables"
+        )
+
     patch_len = max(1, min(int(settings.get("patch_len", 3)), lags))
     stride = max(1, min(int(settings.get("stride", 1)), lags))
-    model = PatchTST(
-        h=lead,
-        input_size=lags,
-        alias="PatchTST",
-        encoder_layers=int(settings.get("encoder_layers", 2)),
-        n_heads=int(settings.get("n_heads", 4)),
-        hidden_size=int(settings.get("hidden_size", 128)),
-        linear_hidden_size=int(settings.get("linear_hidden_size", 256)),
-        dropout=float(settings.get("dropout", 0.1)),
-        fc_dropout=float(settings.get("fc_dropout", 0.1)),
-        head_dropout=float(settings.get("head_dropout", 0.0)),
-        attn_dropout=float(settings.get("attn_dropout", 0.0)),
-        patch_len=patch_len,
-        stride=stride,
-        revin=bool(settings.get("revin", True)),
-        revin_affine=bool(settings.get("revin_affine", False)),
-        revin_subtract_last=bool(settings.get("revin_subtract_last", True)),
-        max_steps=int(settings.get("max_steps", 500)),
-        learning_rate=float(settings.get("learning_rate", 1e-4)),
-        batch_size=int(settings.get("batch_size", 32)),
-        windows_batch_size=int(settings.get("windows_batch_size", 32)),
-        val_check_steps=int(settings.get("val_check_steps", 50)),
-        early_stop_patience_steps=int(settings.get("early_stop_patience_steps", -1)),
-        scaler_type="identity",
-        random_seed=seed,
-        enable_progress_bar=bool(settings.get("enable_progress_bar", True)),
-        logger=False,
-        accelerator=settings.get("accelerator", "auto"),
-        devices=int(settings.get("devices", 1)),
+    patch_count = 1 + (lags - patch_len) // stride
+    hidden_size = int(settings.get("hidden_size", 128))
+    n_heads = int(settings.get("n_heads", 4))
+    if hidden_size % n_heads:
+        raise ValueError("PatchTST hidden_size must be divisible by n_heads")
+
+    class CovariatePatchTST(nn.Module):
+        """Channel-independent patch encoder with a joint SR forecasting head."""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.target_index = target_index
+            self.use_revin = bool(settings.get("revin", True))
+            self.revin_affine = bool(settings.get("revin_affine", False))
+            self.subtract_last = bool(settings.get("revin_subtract_last", True))
+            if self.revin_affine:
+                self.revin_weight = nn.Parameter(torch.ones(1, channel_count, 1))
+                self.revin_bias = nn.Parameter(torch.zeros(1, channel_count, 1))
+
+            self.patch_embedding = nn.Linear(patch_len, hidden_size)
+            self.position_embedding = nn.Parameter(
+                torch.zeros(1, 1, patch_count, hidden_size)
+            )
+            self.channel_embedding = nn.Parameter(
+                torch.zeros(1, channel_count, 1, hidden_size)
+            )
+            self.input_dropout = nn.Dropout(float(settings.get("fc_dropout", 0.1)))
+            encoder_layer = nn.TransformerEncoderLayer(
+                d_model=hidden_size,
+                nhead=n_heads,
+                dim_feedforward=int(settings.get("linear_hidden_size", 256)),
+                dropout=max(
+                    float(settings.get("dropout", 0.1)),
+                    float(settings.get("attn_dropout", 0.0)),
+                ),
+                activation="gelu",
+                batch_first=True,
+                norm_first=True,
+            )
+            self.encoder = nn.TransformerEncoder(
+                encoder_layer,
+                num_layers=int(settings.get("encoder_layers", 2)),
+            )
+            self.head = nn.Sequential(
+                nn.Dropout(float(settings.get("head_dropout", 0.0))),
+                nn.Linear(channel_count * patch_count * hidden_size, lead),
+            )
+            nn.init.normal_(self.position_embedding, mean=0.0, std=0.02)
+            nn.init.normal_(self.channel_embedding, mean=0.0, std=0.02)
+
+        def forward(self, inputs: torch.Tensor) -> torch.Tensor:
+            # inputs: [batch, look-back, SR + 16 historical covariates]
+            channels = inputs.transpose(1, 2)
+            if self.use_revin:
+                center = (
+                    channels[:, :, -1:]
+                    if self.subtract_last
+                    else channels.mean(dim=2, keepdim=True)
+                )
+                scale = torch.sqrt(
+                    channels.var(dim=2, keepdim=True, unbiased=False) + 1e-5
+                )
+                channels = (channels - center) / scale
+                if self.revin_affine:
+                    channels = channels * self.revin_weight + self.revin_bias
+
+            patches = channels.unfold(dimension=2, size=patch_len, step=stride)
+            tokens = self.patch_embedding(patches)
+            tokens = self.input_dropout(
+                tokens + self.position_embedding + self.channel_embedding
+            )
+            batch_size = tokens.shape[0]
+            encoded = self.encoder(
+                tokens.reshape(batch_size * channel_count, patch_count, hidden_size)
+            )
+            forecast = self.head(encoded.reshape(batch_size, -1))
+
+            if self.use_revin:
+                if self.revin_affine:
+                    forecast = (
+                        forecast - self.revin_bias[:, self.target_index, :]
+                    ) / (self.revin_weight[:, self.target_index, :] + 1e-8)
+                forecast = (
+                    forecast * scale[:, self.target_index, :]
+                    + center[:, self.target_index, :]
+                )
+            return forecast
+
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model = CovariatePatchTST().to(device)
+    training_data = TensorDataset(
+        torch.tensor(
+            prepared.sequences[: prepared.train_count],
+            dtype=torch.float32,
+        ),
+        torch.tensor(
+            prepared.targets[: prepared.train_count],
+            dtype=torch.float32,
+        ),
     )
-    first_test_target = int(prepared.first_target_indices[prepared.train_count])
-    test_size = len(prepared.normalized) - first_test_target
-    forecast = NeuralForecast(models=[model], freq=1).cross_validation(
-        df=panel,
-        val_size=0,
-        test_size=test_size,
-        n_windows=None,
-        step_size=1,
+    loader = DataLoader(
+        training_data,
+        batch_size=int(settings.get("windows_batch_size", 32)),
+        shuffle=False,
     )
-    if hasattr(forecast, "to_pandas"):
-        forecast = forecast.to_pandas()
-    forecast = forecast.loc[forecast["unique_id"].eq(target_col)].copy()
-    forecast["ds"] = pd.to_numeric(forecast["ds"], errors="raise").astype(int)
-    forecast["cutoff"] = pd.to_numeric(forecast["cutoff"], errors="raise").astype(int)
-    forecast["lead"] = forecast["ds"] - forecast["cutoff"]
-    selected = forecast.loc[forecast["lead"].eq(lead)].copy()
-    if selected.duplicated(["cutoff", "ds"]).any():
-        raise ValueError("PatchTST returned duplicate origin-target pairs")
-    selected["PatchTST_pred"] = prepared.target_scaler.inverse_transform(
-        selected[["PatchTST"]].to_numpy(dtype=float)
-    ).reshape(-1)
-    return pd.DataFrame(
-        {
-            "origin_date": prepared.dates.iloc[selected["cutoff"].to_numpy()].to_numpy(),
-            date_col: prepared.dates.iloc[selected["ds"].to_numpy()].to_numpy(),
-            "lead": int(lead),
-            "PatchTST_pred": selected["PatchTST_pred"].to_numpy(dtype=float),
-        }
-    ).sort_values("origin_date").reset_index(drop=True)
+    optimizer = torch.optim.Adam(
+        model.parameters(),
+        lr=float(settings.get("learning_rate", 1e-4)),
+    )
+    loss_name = str(settings.get("loss", "mae")).lower()
+    if loss_name not in {"mae", "mse"}:
+        raise ValueError("PatchTST loss must be 'mae' or 'mse'")
+    criterion: nn.Module = nn.L1Loss() if loss_name == "mae" else nn.MSELoss()
+    max_steps = int(settings.get("max_steps", 500))
+    if max_steps < 1:
+        raise ValueError("PatchTST max_steps must be positive")
+
+    model.train()
+    step = 0
+    while step < max_steps:
+        for features, targets in loader:
+            features, targets = features.to(device), targets.to(device)
+            optimizer.zero_grad()
+            loss = criterion(model(features), targets)
+            loss.backward()
+            optimizer.step()
+            step += 1
+            if bool(settings.get("enable_progress_bar", True)) and (
+                step == 1 or step == max_steps or step % 100 == 0
+            ):
+                print(f"PatchTST step {step}/{max_steps}: loss={loss.item():.6f}")
+            if step >= max_steps:
+                break
+
+    model.eval()
+    with torch.no_grad():
+        predicted = model(
+            torch.tensor(
+                prepared.sequences[prepared.train_count :],
+                dtype=torch.float32,
+                device=device,
+            )
+        ).cpu().numpy()
+    return _prediction_frame(
+        prepared,
+        predicted,
+        lead,
+        "PatchTST_pred",
+        date_col,
+    )
 
 
 def _merge_prediction(
