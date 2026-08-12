@@ -1,3 +1,0 @@
-﻿criterion,Support Vector Regressor,Decision Tree Regressor,GradientBoostingRegressor,LSTM,CNN,PatchTST,iTransformer,Persistence,AR1,ETS_ANN
-MAD,-33.525 ***,-8.286 ***,-2.627 ***,-11.609 ***,-10.415 ***,-8.877 ***,-9.007 ***,-3.473 ***,-3.507 ***,-3.473 ***
-MSE,-28.078 ***,-7.106 ***,-1.669 *,-9.198 ***,-8.173 ***,-6.389 ***,-5.288 ***,-1.881 *,-1.882 *,-1.881 *
