@@ -168,7 +168,7 @@ def append_macro_features(frame: pd.DataFrame, macro_csv: Path, credit_csv: Path
 
     out["LS"] = out["银行间同业拆借加权利率:3个月"] - out["中债国债到期收益率:3月"]
     out["YS"] = out["中债国债到期收益率:10年"] - out["中债国债到期收益率:6月"]
-    out["CS"] = out["中债国债到期收益率:10年"] - out["中债企业债到期收益率(AAA):10年"]
+    out["CS"] = out["中债企业债到期收益率(AAA):10年"] - out["中债国债到期收益率:10年"]
     out["VIX"] = out["Volatility"]
     out["Market_Return"] = out["Log_Return"]
     return out
