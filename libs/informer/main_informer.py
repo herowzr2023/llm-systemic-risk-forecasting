@@ -22,6 +22,9 @@ parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='l
 
 parser.add_argument('--seq_len', type=int, default=5, help='input sequence length of Informer encoder')
 parser.add_argument('--label_len', type=int, default=2, help='start token length of Informer decoder')
+parser.add_argument('--lead', type=int, choices=[1, 5], default=1, help='exact trading-calendar direct target lead')
+parser.add_argument('--calendar_path', type=str, default=None, help='full trading calendar CSV with a date column, relative to working directory')
+parser.add_argument('--results_dir', type=str, default='./results/', help='evaluation output directory')
 parser.add_argument('--pred_len', type=int, default=1, help='prediction sequence length')
 # Informer decoder input: concat[start token series(label_len), zero padding series(pred_len)]
 
@@ -84,7 +87,7 @@ if args.use_gpu and args.use_multi_gpu:
     args.gpu = args.device_ids[0]
 
 
-def infer_custom_dimensions(root_path, data_path, target, features):
+def infer_custom_dimensions(root_path, data_path, target, features, cols=None):
     if features == 'S':
         return [1, 1, 1]
     csv_path = os.path.join(root_path, data_path)
@@ -93,7 +96,12 @@ def infer_custom_dimensions(root_path, data_path, target, features):
     df = pd.read_csv(csv_path, nrows=1)
     if target not in df.columns:
         return None
-    variable_count = len([col for col in df.columns if col != 'date'])
+    if cols is not None:
+        if len(cols) != len(set(cols)) or target not in cols or 'date' in cols or any(col not in df.columns for col in cols):
+            return None
+        variable_count = len(cols)
+    else:
+        variable_count = len([col for col in df.columns if col != 'date'])
     if features == 'M':
         return [variable_count, variable_count, variable_count]
     if features == 'MS':
@@ -114,6 +122,18 @@ data_parser = {'ETTh1': {'data': 'ETTh1.csv', 'T': 'OT', 'M': [7, 7, 7], 'S': [1
                               'MS': [10, 11, 1]},
                'custom': {'data': args.path, 'T': args.predict_col, 'M': [10, 10, 10], 'S': [10, 10, 10],
                           'MS': [9, 10, 1]}, }
+if args.data == 'direct':
+    if args.do_predict:
+        parser.error('--do_predict is unsupported for direct; use evaluation with observed target labels')
+    if args.pred_len != 1 or args.features != 'MS' or args.is_class or not args.calendar_path:
+        parser.error('direct requires pred_len=1, features=MS, regression, and --calendar_path')
+    args.data_path = args.path
+    args.target = args.predict_col
+    dimensions = infer_custom_dimensions(args.root_path, args.data_path, args.target, args.features, args.cols)
+    if dimensions is None:
+        parser.error('direct input/target is missing or --cols must contain distinct existing variables including the target, excluding date')
+    args.enc_in, args.dec_in, args.c_out = dimensions
+
 if args.data in data_parser.keys():
     data_info = data_parser[args.data]
     args.data_path = data_info['data']
@@ -138,6 +158,9 @@ setting = '{}_{}_ft{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_at{}_fc{}_eb{}_dt{
     args.model, args.data, args.features, args.seq_len, args.label_len, args.pred_len, args.d_model, args.n_heads,
     args.e_layers, args.d_layers, args.d_ff, args.attn, args.factor, args.embed, args.distil, args.mix, args.path,
     args.des, args.itr)
+
+if args.data == 'direct':
+    setting += '_lead{}'.format(args.lead)
 
 exp = Exp(args)  # set experiments
 print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))

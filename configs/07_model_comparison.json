@@ -65,21 +65,25 @@
   "jobs": [
     {
       "name": "one_step",
-      "description": "One-step comparison on the reported sample.",
-      "baseline_csv": "data/intermediate/informer_baseline_1d.csv",
+      "description": "Scalar direct t+1 Chinese-trading-session comparison using historical predictors only.",
+      "baseline_csv": "data/intermediate/informer_direct_1d.csv",
       "data_csv": "outputs/05_forecasting_datasets/ALL_final_data_with_sen_full_predictors.csv",
-      "output_csv": "results/complete_base_1d_predictions.csv",
+      "output_csv": "results/direct/complete_base_1d_predictions.csv",
       "lead": 1,
       "lags": 5
     },
     {
       "name": "five_step",
-      "description": "Five-step comparison on the reported sample.",
-      "baseline_csv": "data/intermediate/informer_baseline_5d.csv",
+      "description": "Scalar direct t+5 Chinese-trading-session comparison using historical predictors only.",
+      "baseline_csv": "data/intermediate/informer_direct_5d.csv",
       "data_csv": "outputs/05_forecasting_datasets/ALL_final_data_with_sen_full_predictors.csv",
-      "output_csv": "results/complete_base_5d_predictions.csv",
+      "output_csv": "results/direct/complete_base_5d_predictions.csv",
       "lead": 5,
       "lags": 10
     }
-  ]
+  ],
+  "forecast_mode": "direct_terminal_target",
+  "baseline_provenance": "direct_terminal_target",
+  "calendar_csv": "data/intermediate/trading_calendar.csv",
+  "calendar_date_col": "date"
 }

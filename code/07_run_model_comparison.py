@@ -45,7 +45,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
             "Fit selected comparator models and save their forecasts beside the Informer forecast "
-            "for one specified forecast lead."
+            "for a scalar direct terminal trading-day target."
         )
     )
     parser.add_argument("--config", default=str(PROJECT_ROOT / "configs" / "07_model_comparison.json"))
@@ -79,6 +79,8 @@ def main() -> None:
     if args.dry_run:
         return
 
+    configuration = dict(configuration)
+    configuration["calendar_csv"] = str(resolve_path(configuration["calendar_csv"]))
     runner = _load_runner()
     output = runner(
         baseline_csv=resolve_path(job["baseline_csv"]),

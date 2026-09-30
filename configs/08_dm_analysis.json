@@ -2,18 +2,18 @@
   "jobs": [
     {
       "name": "one_step",
-      "input_csv": "results/complete_base_1d_predictions.csv",
-      "metrics_output_csv": "results/complete_base_1d_compare_metrics.csv",
-      "dm_output_csv": "results/complete_base_1d_compare_DM_test.csv",
+      "input_csv": "results/direct/complete_base_1d_predictions.csv",
+      "metrics_output_csv": "results/direct/complete_base_1d_compare_metrics.csv",
+      "dm_output_csv": "results/direct/complete_base_1d_compare_DM_test.csv",
       "actual_col": "TRUE",
       "baseline_col": "Informer_pred",
       "date_col": "date"
     },
     {
       "name": "five_step",
-      "input_csv": "results/complete_base_5d_predictions.csv",
-      "metrics_output_csv": "results/complete_base_5d_compare_metrics.csv",
-      "dm_output_csv": "results/complete_base_5d_compare_DM_test.csv",
+      "input_csv": "results/direct/complete_base_5d_predictions.csv",
+      "metrics_output_csv": "results/direct/complete_base_5d_compare_metrics.csv",
+      "dm_output_csv": "results/direct/complete_base_5d_compare_DM_test.csv",
       "actual_col": "TRUE",
       "baseline_col": "Informer_pred",
       "date_col": "date"

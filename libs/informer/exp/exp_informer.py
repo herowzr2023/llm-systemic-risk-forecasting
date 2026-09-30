@@ -1,4 +1,4 @@
-from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred
+from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Direct, Dataset_Pred
 from exp.exp_basic import Exp_Basic
 from models.model import Informer, InformerStack
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
@@ -34,6 +34,24 @@ def custom_collate_fn(batch):
     return batch_x, batch_y, batch_x_mark, batch_y_mark, date_seq
 
 
+def direct_result_frame(preds, trues, origins, targets, lead):
+    """Keep one scalar forecast and explicit calendar identity per origin."""
+    preds, trues = np.asarray(preds), np.asarray(trues)
+    if preds.ndim != 3 or preds.shape[1:] != (1, 1) or trues.shape != preds.shape:
+        raise ValueError('Direct exports require shape (origins, 1, 1)')
+    if len(origins) != len(preds) or len(targets) != len(preds):
+        raise ValueError('Direct prediction/date counts differ')
+    if int(lead) not in (1, 5):
+        raise ValueError('Direct exports require lead 1 or 5')
+    frame = pd.DataFrame({'origin': pd.to_datetime(origins), 'origin_date': pd.to_datetime(origins),
+                          'target_date': pd.to_datetime(targets), 'forecast_mode': 'direct',
+                          'date': pd.to_datetime(targets), 'horizon': int(lead), 'lead': int(lead),
+                          'actual': trues.reshape(-1), 'true': trues.reshape(-1), 'pred': preds.reshape(-1)})
+    if frame['origin'].duplicated().any() or not (frame['origin'] < frame['target_date']).all():
+        raise ValueError('Direct exports require unique origins preceding their targets')
+    return frame.sort_values(['target_date', 'origin'], kind='stable').reset_index(drop=True)
+
+
 class Exp_Informer(Exp_Basic):
     def __init__(self, args):
         super(Exp_Informer, self).__init__(args)
@@ -52,12 +70,12 @@ class Exp_Informer(Exp_Basic):
             model = nn.DataParallel(model, device_ids=self.args.device_ids)
         return model
 
-    def _get_data(self, flag):
+    def _get_data(self, flag, evaluation=False):
         args = self.args
 
         data_dict = {'ETTh1': Dataset_ETT_hour, 'ETTh2': Dataset_ETT_hour, 'ETTm1': Dataset_ETT_minute,
             'ETTm2': Dataset_ETT_minute, 'WTH': Dataset_Custom, 'ECL': Dataset_Custom, 'Solar': Dataset_Custom,
-            'Risk': Dataset_Custom, 'Risk_E': Dataset_Custom, 'custom': Dataset_Custom, 'custom_sen': Dataset_Custom, }
+            'Risk': Dataset_Custom, 'Risk_E': Dataset_Custom, 'custom': Dataset_Custom, 'custom_sen': Dataset_Custom, 'direct': Dataset_Direct, }
         Data = data_dict[self.args.data]
         timeenc = 0 if args.embed != 'timeF' else 1
 
@@ -67,6 +85,8 @@ class Exp_Informer(Exp_Basic):
             batch_size = args.batch_size;
             freq = args.freq
         elif flag == 'pred':
+            if args.data == 'direct':
+                raise ValueError('Direct unseen prediction requires observed calendar target labels; use evaluate')
             shuffle_flag = False;
             drop_last = False;
             batch_size = 1;
@@ -77,10 +97,13 @@ class Exp_Informer(Exp_Basic):
             drop_last = True;
             batch_size = args.batch_size;
             freq = args.freq
+        if args.data == 'direct' and (evaluation or flag in {'val', 'test'}):
+            shuffle_flag, drop_last = False, False
+        direct_kwargs = {'calendar_path': args.calendar_path, 'lead': args.lead} if args.data == 'direct' else {}
         data_set = Data(root_path=args.root_path, data_path=args.data_path, flag=flag,
             size=[args.seq_len, args.label_len, args.pred_len], features=args.features, target=args.target,
             inverse=args.inverse, timeenc=timeenc, freq=freq, cols=args.cols, scaler_type=args.scaler,
-            is_class=args.is_class)
+            is_class=args.is_class, **direct_kwargs)
         print(flag, len(data_set))
         data_loader = DataLoader(data_set, batch_size=batch_size, shuffle=shuffle_flag, num_workers=args.num_workers,
             drop_last=drop_last, collate_fn=custom_collate_fn)
@@ -211,7 +234,7 @@ class Exp_Informer(Exp_Basic):
             print('test shape:', preds.shape, trues.shape)
 
         # result save
-        folder_path = './results/' + setting + '/'
+        folder_path = os.path.join(getattr(self.args, 'results_dir', './results/'), setting) + os.sep
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
         if self.args.is_class:
@@ -247,7 +270,7 @@ class Exp_Informer(Exp_Basic):
         preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
 
         # result save
-        folder_path = './results/' + setting + '/'
+        folder_path = os.path.join(getattr(self.args, 'results_dir', './results/'), setting) + os.sep
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
 
@@ -268,7 +291,7 @@ class Exp_Informer(Exp_Basic):
         datasets = {}
         loaders = {}
         for flag in ['train', 'val', 'test']:
-            data, loader = self._get_data(flag=flag)
+            data, loader = self._get_data(flag=flag, evaluation=True)
             datasets[flag] = data
             loaders[flag] = loader
 
@@ -284,6 +307,7 @@ class Exp_Informer(Exp_Basic):
             preds = []
             trues = []
             dates = []
+            origins = []
 
             data = datasets[flag]
             loader = loaders[flag]
@@ -294,6 +318,8 @@ class Exp_Informer(Exp_Basic):
                         batch_dates)
                     preds.append(pred.detach().cpu().numpy())
                     trues.append(true.detach().cpu().numpy())
+                    if self.args.data == 'direct':
+                        origins.extend(np.asarray(batch_dates)[:, self.args.label_len - 1])
 
                     # 如果需要时间序列可视化，就把 y_date 收集起来
                     if y_date is not None:
@@ -312,7 +338,7 @@ class Exp_Informer(Exp_Basic):
             dates = np.array(dates)
 
             # 创建结果文件夹
-            folder_path = './results/' + setting + '/'
+            folder_path = os.path.join(getattr(self.args, 'results_dir', './results/'), setting) + os.sep
             if not os.path.exists(folder_path):
                 os.makedirs(folder_path)
 
@@ -385,6 +411,12 @@ class Exp_Informer(Exp_Basic):
                     horizon_sorted = horizon_flat
                     window_id_sorted = window_id_flat
 
+                if self.args.data == 'direct':
+                    direct_frame = direct_result_frame(preds, trues, origins, dates, self.args.lead)
+                    dates_sorted = direct_frame['date'].to_numpy()
+                    preds_sorted = direct_frame['pred'].to_numpy()
+                    trues_sorted = direct_frame['actual'].to_numpy()
+
                 # 保存为 npy
                 np.save(folder_path + f'{flag}_pred.npy', preds_sorted)
                 np.save(folder_path + f'{flag}_true.npy', trues_sorted)
@@ -405,7 +437,7 @@ class Exp_Informer(Exp_Basic):
                                 'forecast_window_id': window_id_sorted,
                             }
                         )
-                    df = pd.DataFrame(result_columns)
+                    df = direct_frame if self.args.data == 'direct' else pd.DataFrame(result_columns)
                     df.to_csv(folder_path + f'{flag}_results.csv', index=False)
 
                     # 绘制预测与真实值对比
@@ -435,7 +467,9 @@ class Exp_Informer(Exp_Basic):
                 # 把回归指标也放入 metrics_list（只一条记录即可）
                 metrics_list.append(
                     {'文件名': Filename, '轮次': Epoch, '数据集': flag, 'MSE': mse, 'MAE': mae, 'RMSE': rmse, 'R2': r2,
-                        'MAPE': mape, 'MSPE': mspe})
+                        'MAPE': mape, 'MSPE': mspe,
+                        **({'horizon': self.args.lead, 'lead': self.args.lead, 'forecast_mode': 'direct'}
+                           if self.args.data == 'direct' else {})})
 
         # ========== 统一将 metrics_list 存为 CSV ==========
         # 这里为了简化，只存最后一次循环的 folder_path

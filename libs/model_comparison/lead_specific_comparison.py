@@ -10,7 +10,6 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize_scalar
 from sklearn.ensemble import GradientBoostingRegressor
-from sklearn.multioutput import MultiOutputRegressor
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 
@@ -35,6 +34,8 @@ class PreparedSamples:
     targets: np.ndarray
     first_target_indices: np.ndarray
     train_count: int
+    target_indices: np.ndarray
+    fit_end: int
 
 
 def _set_seed(seed: int) -> None:
@@ -82,6 +83,8 @@ def _read_forecasting_data(
     if converted.isna().any().any():
         missing = converted.columns[converted.isna().any()].tolist()
         raise ValueError(f"Missing or non-numeric values in forecasting variables: {missing}")
+    if not np.isfinite(converted.to_numpy(dtype=float)).all():
+        raise ValueError("Forecasting variables must be finite")
     frame[numeric] = converted
     return frame[[date_col, *numeric]]
 
@@ -124,71 +127,75 @@ def _legacy_horizons(raw_dates: pd.Series, lead: int) -> np.ndarray:
     return flattened_horizons[legacy_sort_order]
 
 
+def _calendar_dates(calendar: pd.Series | pd.DatetimeIndex) -> pd.DatetimeIndex:
+    dates = pd.DatetimeIndex(pd.to_datetime(calendar, errors="raise"))
+    if dates.hasnans or dates.has_duplicates or not dates.is_monotonic_increasing:
+        raise ValueError("Trading calendar must have unique, increasing, nonmissing dates")
+    return dates
+
+
 def load_informer_lead(
     baseline_csv: Path,
     forecasting_data: pd.DataFrame,
     lead: int,
     date_col: str,
     target_col: str,
+    calendar: pd.Series | pd.DatetimeIndex,
+    provenance: str,
 ) -> pd.DataFrame:
-    """Return exactly one Informer forecast for each origin at the requested lead."""
+    """Audit an explicitly declared scalar direct archive against the trading calendar."""
+    if provenance != "direct_terminal_target":
+        raise ValueError("Baseline requires explicit direct_terminal_target provenance; legacy joint archives are unsupported")
+    if lead not in {1, 5}:
+        raise ValueError("Direct comparison supports lead 1 or 5 only")
     raw = pd.read_csv(baseline_csv)
+    if raw.empty:
+        raise ValueError("Informer direct archive is empty")
     baseline_date = _column(raw, (date_col, "target_date"), "Informer target-date column")
-    actual_col = _column(raw, ("true", "TRUE", "actual", target_col), "Informer actual column")
-    prediction_col = _column(raw, ("pred", "Informer_pred", "baseline_pred"), "Informer prediction column")
-    raw[baseline_date] = pd.to_datetime(raw[baseline_date], errors="raise")
-    raw[actual_col] = pd.to_numeric(raw[actual_col], errors="raise")
-    raw[prediction_col] = pd.to_numeric(raw[prediction_col], errors="raise")
-
-    horizon_col = next((column for column in ("lead", "horizon") if column in raw), None)
-    if horizon_col:
-        raw[horizon_col] = pd.to_numeric(raw[horizon_col], errors="raise").astype(int)
-        selected = raw.loc[raw[horizon_col].eq(lead)].copy()
-        if selected.empty:
-            raise ValueError(f"No Informer forecasts found for lead {lead}")
-    else:
-        raw["_reconstructed_lead"] = _legacy_horizons(raw[baseline_date], lead)
-        selected = raw.loc[raw["_reconstructed_lead"].eq(lead)].copy()
-
-    data_dates = pd.to_datetime(forecasting_data[date_col]).reset_index(drop=True)
-    date_to_index = pd.Series(np.arange(len(data_dates)), index=data_dates).to_dict()
-    target_indices = selected[baseline_date].map(date_to_index)
-    if target_indices.isna().any():
-        examples = selected.loc[target_indices.isna(), baseline_date].head(3).dt.strftime("%Y-%m-%d").tolist()
-        raise ValueError(f"Informer target dates absent from forecasting data: {examples}")
-    target_indices = target_indices.astype(int)
-    if (target_indices < lead).any():
-        raise ValueError("At least one Informer forecast has no valid information-cutoff date")
-
-    if "origin_date" in selected:
-        supplied_origin = pd.to_datetime(selected["origin_date"], errors="raise").reset_index(drop=True)
-        expected_origin = data_dates.iloc[(target_indices - lead).to_numpy()].reset_index(drop=True)
-        if not supplied_origin.equals(expected_origin):
-            raise ValueError("Informer origin_date is inconsistent with target date and requested lead")
-        origin_dates = supplied_origin
-    else:
-        origin_dates = data_dates.iloc[(target_indices - lead).to_numpy()].reset_index(drop=True)
-
-    data_actual = forecasting_data[target_col].to_numpy(dtype=float)[target_indices.to_numpy()]
-    archive_actual = selected[actual_col].to_numpy(dtype=float)
-    if not np.allclose(data_actual, archive_actual, rtol=1e-6, atol=1e-8):
-        difference = float(np.max(np.abs(data_actual - archive_actual)))
-        raise ValueError(f"Informer actual values do not align with forecasting data (max difference {difference})")
-
-    result = pd.DataFrame(
-        {
-            "origin_date": origin_dates,
-            date_col: selected[baseline_date].reset_index(drop=True),
-            "lead": int(lead),
-            "TRUE": archive_actual,
-            "Informer_pred": selected[prediction_col].to_numpy(dtype=float),
-        }
-    ).sort_values("origin_date").reset_index(drop=True)
-    if result.duplicated(["origin_date", date_col, "lead"]).any():
-        raise ValueError("More than one Informer forecast remains for an origin-target-lead combination")
-    if not result[date_col].is_monotonic_increasing:
-        raise ValueError("Selected Informer target dates are not increasing")
-    return result
+    actual_col = _column(raw, ("actual_SR", "true", "TRUE", "actual", target_col), "Informer actual column")
+    prediction_col = _column(raw, ("predicted_SR", "pred", "Informer_pred", "baseline_pred"), "Informer prediction column")
+    target_dates = pd.to_datetime(raw[baseline_date], errors="raise")
+    for column in (date_col, "target_date"):
+        if column in raw and not pd.to_datetime(raw[column], errors="raise").equals(target_dates):
+            raise ValueError("Informer target-date aliases conflict")
+    actual = pd.to_numeric(raw[actual_col], errors="raise").to_numpy(dtype=float)
+    predicted = pd.to_numeric(raw[prediction_col], errors="raise").to_numpy(dtype=float)
+    if not np.isfinite(actual).all() or not np.isfinite(predicted).all():
+        raise ValueError("Informer actual/prediction values must be finite")
+    origin_col = next((c for c in ("origin_date", "origin") if c in raw), None)
+    if origin_col is None or not any(c in raw for c in ("lead", "horizon")):
+        raise ValueError("Direct archive requires explicit origin_date/origin and lead/horizon metadata")
+    if "forecast_mode" not in raw or not raw["forecast_mode"].isin(["direct", "direct_terminal_target"]).all():
+        raise ValueError("Direct archive requires per-file forecast_mode=direct provenance")
+    for column in ("lead", "horizon"):
+        if column in raw and not pd.to_numeric(raw[column], errors="raise").eq(lead).all():
+            raise ValueError("Informer lead metadata does not match requested direct lead")
+    for column in ("target_mode", "provenance"):
+        if column in raw and not raw[column].eq("direct_terminal_target").all():
+            raise ValueError("Informer archive provenance conflicts with scalar direct target")
+    calendar_dates = _calendar_dates(calendar)
+    target_positions = calendar_dates.get_indexer(target_dates)
+    if (target_positions < lead).any():
+        raise ValueError("Informer target date absent from calendar or has no valid origin")
+    origin_dates = pd.Series(calendar_dates[target_positions - lead])
+    for column in ("origin_date", "origin"):
+        if column not in raw:
+            continue
+        supplied = pd.to_datetime(raw[column], errors="raise").reset_index(drop=True)
+        if not supplied.equals(origin_dates):
+            raise ValueError(f"Informer {column} is inconsistent with calendar and requested lead")
+    data_dates = pd.DatetimeIndex(pd.to_datetime(forecasting_data[date_col]))
+    target_indices = data_dates.get_indexer(target_dates)
+    if (target_indices < 0).any() or (data_dates.get_indexer(origin_dates) < 0).any():
+        raise ValueError("Informer target or origin dates absent from forecasting data")
+    data_actual = forecasting_data[target_col].to_numpy(dtype=float)[target_indices]
+    if not np.allclose(data_actual, actual, rtol=1e-6, atol=1e-8):
+        raise ValueError("Informer actual values do not align with forecasting data")
+    result = pd.DataFrame({"origin_date": origin_dates, date_col: target_dates,
+                           "lead": int(lead), "TRUE": actual, "Informer_pred": predicted})
+    if result[date_col].duplicated().any() or result["origin_date"].duplicated().any():
+        raise ValueError("More than one Informer direct forecast remains per origin/target")
+    return result.sort_values("origin_date").reset_index(drop=True)
 
 
 def _prepare_samples(
@@ -199,13 +206,16 @@ def _prepare_samples(
     normalization: str,
     date_col: str,
     target_col: str,
+    calendar: pd.Series | pd.DatetimeIndex,
 ) -> PreparedSamples:
-    if lead < 1 or lags < 1:
-        raise ValueError("lead and lags must be positive")
+    if lead not in {1, 5} or lags < 1:
+        raise ValueError("Direct comparison requires lead 1 or 5 and positive lags")
     if not 0.0 < train_ratio < 1.0:
         raise ValueError("train_ratio must lie between zero and one")
 
     dates = pd.to_datetime(data[date_col]).reset_index(drop=True)
+    if dates.isna().any() or dates.duplicated().any() or not dates.is_monotonic_increasing:
+        raise ValueError("Forecasting dates must be unique, increasing, and nonmissing")
     value_columns = [column for column in data.columns if column != date_col]
     predictor_columns = [column for column in value_columns if column != target_col]
     fit_end = int(len(data) * train_ratio)
@@ -224,23 +234,36 @@ def _prepare_samples(
 
     matrix = normalized[value_columns].to_numpy(dtype=np.float32)
     target = normalized[target_col].to_numpy(dtype=np.float32)
-    first_targets = np.arange(lags, len(data) - lead + 1, dtype=int)
-    if len(first_targets) < 2:
-        raise ValueError("Insufficient observations for the requested lead and lag length")
-    sequences = np.stack([matrix[index - lags : index] for index in first_targets])
-    targets = np.stack([target[index : index + lead] for index in first_targets])
-    train_count = int(len(first_targets) * train_ratio)
+    calendar_dates = _calendar_dates(calendar)
+    positions = calendar_dates.get_indexer(dates)
+    if (positions < 0).any():
+        raise ValueError("Forecasting dates absent from the explicit trading calendar")
+    position_to_row = {position: row for row, position in enumerate(positions)}
+    origins, terminal_targets = [], []
+    for origin in range(lags - 1, len(data)):
+        # Historical input must span consecutive calendar sessions through the origin.
+        if not np.array_equal(positions[origin-lags+1:origin+1],
+                              np.arange(positions[origin]-lags+1, positions[origin]+1)):
+            continue
+        terminal = position_to_row.get(positions[origin] + lead)
+        if terminal is None:
+            continue
+        # Embargo crossing labels so all fits end before the first test origin.
+        if terminal < fit_end or origin >= fit_end - 1:
+            origins.append(origin)
+            terminal_targets.append(terminal)
+    first_targets = np.asarray(origins, dtype=int) + 1
+    target_indices = np.asarray(terminal_targets, dtype=int)
+    train_count = int(np.count_nonzero(target_indices < fit_end))
     if train_count <= 0 or train_count >= len(first_targets):
-        raise ValueError("The train/test split leaves an empty segment")
+        raise ValueError("The calendar-aware train/test split leaves an empty segment")
+    sequences = np.stack([matrix[index-lags:index] for index in first_targets])
+    targets = target[target_indices].reshape(-1, 1)
     return PreparedSamples(
-        normalized=normalized,
-        dates=dates,
-        raw_target=data[target_col].to_numpy(dtype=float),
-        target_scaler=target_scaler,
-        sequences=sequences,
-        targets=targets,
-        first_target_indices=first_targets,
-        train_count=train_count,
+        normalized=normalized, dates=dates,
+        raw_target=data[target_col].to_numpy(dtype=float), target_scaler=target_scaler,
+        sequences=sequences, targets=targets, first_target_indices=first_targets,
+        train_count=train_count, target_indices=target_indices, fit_end=fit_end,
     )
 
 
@@ -255,11 +278,11 @@ def _prediction_frame(
     if predictions.ndim == 1:
         predictions = predictions.reshape(-1, 1)
     expected_rows = len(prepared.first_target_indices) - prepared.train_count
-    if predictions.shape != (expected_rows, lead):
-        raise ValueError(f"{output_column}: expected shape {(expected_rows, lead)}, got {predictions.shape}")
+    if predictions.shape != (expected_rows, 1):
+        raise ValueError(f"{output_column}: expected scalar shape {(expected_rows, 1)}, got {predictions.shape}")
     first_targets = prepared.first_target_indices[prepared.train_count :]
-    target_indices = first_targets + lead - 1
-    last_component = predictions[:, lead - 1].reshape(-1, 1)
+    target_indices = prepared.target_indices[prepared.train_count :]
+    last_component = predictions.reshape(-1, 1)
     inverse = prepared.target_scaler.inverse_transform(last_component).reshape(-1)
     return pd.DataFrame(
         {
@@ -310,14 +333,14 @@ def _simple_predictions(
     date_col: str,
 ) -> dict[str, pd.DataFrame]:
     first_targets = prepared.first_target_indices[prepared.train_count :]
-    first_test_target = int(first_targets[0])
-    training_values = prepared.raw_target[:first_test_target]
+    training_values = prepared.raw_target[:prepared.fit_end]
     outputs: dict[str, list[float]] = {model: [] for model in models & {"Persistence", "AR(1)", "ETS"}}
     if "AR(1)" in outputs:
         intercept, coefficient = _fit_ar1(training_values)
     if "ETS" in outputs:
         alpha, level = _fit_ets(training_values)
 
+    ets_seen = prepared.fit_end - 1
     for first_target in first_targets:
         last_observation = float(prepared.raw_target[first_target - 1])
         if "Persistence" in outputs:
@@ -325,10 +348,13 @@ def _simple_predictions(
         if "AR(1)" in outputs:
             outputs["AR(1)"].append(_ar_forecast(last_observation, intercept, coefficient, lead))
         if "ETS" in outputs:
+            # Assimilate every observed row through this origin, including skipped origins.
+            for observed in range(ets_seen + 1, first_target):
+                level = alpha * float(prepared.raw_target[observed]) + (1.0 - alpha) * level
+            ets_seen = first_target - 1
             outputs["ETS"].append(level)
-            level = alpha * float(prepared.raw_target[first_target]) + (1.0 - alpha) * level
 
-    target_indices = first_targets + lead - 1
+    target_indices = prepared.target_indices[prepared.train_count :]
     frames: dict[str, pd.DataFrame] = {}
     for model, predictions in outputs.items():
         frames[model] = pd.DataFrame(
@@ -355,13 +381,13 @@ def _gbr_predictions(
         max_depth=int(settings.get("max_depth", 3)),
         random_state=seed,
     )
-    model = estimator if lead == 1 else MultiOutputRegressor(estimator)
+    model = estimator
     x_train = prepared.sequences[: prepared.train_count].reshape(prepared.train_count, -1)
     x_test = prepared.sequences[prepared.train_count :].reshape(
         len(prepared.sequences) - prepared.train_count, -1
     )
     y_train = prepared.targets[: prepared.train_count]
-    model.fit(x_train, y_train.reshape(-1) if lead == 1 else y_train)
+    model.fit(x_train, y_train.reshape(-1))
     predicted = model.predict(x_test)
     return _prediction_frame(prepared, predicted, lead, "GBR_pred", date_col)
 
@@ -388,7 +414,7 @@ def _lstm_predictions(
                 num_layers=int(settings.get("num_layers", 1)),
                 batch_first=True,
             )
-            self.output = nn.Linear(int(settings.get("hidden_size", 50)), lead)
+            self.output = nn.Linear(int(settings.get("hidden_size", 50)), 1)
 
         def forward(self, values):
             encoded, _ = self.lstm(values)
@@ -469,7 +495,7 @@ def _patchtst_predictions(
         raise ValueError("PatchTST hidden_size must be divisible by n_heads")
 
     class CovariatePatchTST(nn.Module):
-        """Channel-independent patch encoder with a joint SR forecasting head."""
+        """Channel-independent patch encoder with a scalar direct SR forecasting head."""
 
         def __init__(self) -> None:
             super().__init__()
@@ -507,7 +533,7 @@ def _patchtst_predictions(
             )
             self.head = nn.Sequential(
                 nn.Dropout(float(settings.get("head_dropout", 0.0))),
-                nn.Linear(channel_count * patch_count * hidden_size, lead),
+                nn.Linear(channel_count * patch_count * hidden_size, 1),
             )
             nn.init.normal_(self.position_embedding, mean=0.0, std=0.02)
             nn.init.normal_(self.channel_embedding, mean=0.0, std=0.02)
@@ -659,8 +685,21 @@ def run_lead_specific_comparison(
 
     feature_columns = config.get("feature_columns")
     data = _read_forecasting_data(Path(data_csv), date_col, target_col, feature_columns)
-    result = load_informer_lead(Path(baseline_csv), data, lead, date_col, target_col)
-    prepared = _prepare_samples(data, lead, lags, train_ratio, normalization, date_col, target_col)
+    if config.get("forecast_mode") != "direct_terminal_target":
+        raise ValueError("Comparator config must declare forecast_mode=direct_terminal_target")
+    calendar_path = Path(config["calendar_csv"])
+    if not calendar_path.is_absolute():
+        calendar_path = Path(__file__).resolve().parents[2] / calendar_path
+    calendar = pd.read_csv(calendar_path)[config.get("calendar_date_col", "date")]
+    prepared = _prepare_samples(data, lead, lags, train_ratio, normalization, date_col, target_col, calendar)
+    result = load_informer_lead(Path(baseline_csv), data, lead, date_col, target_col,
+                                calendar, config.get("baseline_provenance", ""))
+    valid = _prediction_frame(prepared, np.zeros((len(prepared.targets)-prepared.train_count, 1)),
+                              lead, "_contract", date_col)
+    archive_keys = pd.MultiIndex.from_frame(result[["origin_date", date_col, "lead"]])
+    valid_keys = pd.MultiIndex.from_frame(valid[["origin_date", date_col, "lead"]])
+    if not archive_keys.isin(valid_keys).all():
+        raise ValueError("Informer archive includes origins outside valid historical windows or test cutoff")
     model_set = set(selected_models)
 
     generated = _simple_predictions(prepared, model_set, lead, date_col)
@@ -676,7 +715,10 @@ def run_lead_specific_comparison(
 
     for model in selected_models:
         result = _merge_prediction(result, generated[model], model, date_col)
-    ordered = ["origin_date", date_col, "lead", "TRUE", "Informer_pred"] + [
+    result["target_date"] = result[date_col]
+    result["horizon"] = int(lead)
+    result["forecast_mode"] = "direct"
+    ordered = ["origin_date", date_col, "target_date", "lead", "horizon", "forecast_mode", "TRUE", "Informer_pred"] + [
         OUTPUT_COLUMNS[model] for model in selected_models
     ]
     result = result[ordered]

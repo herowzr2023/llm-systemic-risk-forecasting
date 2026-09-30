@@ -125,6 +125,12 @@ python code/06_batch_train_informer.py --config configs/06_informer_batch.json -
 
 Remove `--dry-run`, or use the batch runner's explicit execution option, only when the GPU environment and output locations have been reviewed.
 
+The active configurations use **scalar direct targets** at `lead=1` and `lead=5`, with `data=direct` and `pred_len=1` in both cases. For origin session \(t\), the five-day job learns only \(SR_{t+5}\); it does not learn a joint vector of days 1–5 or average those days. Encoder and decoder-prefix observations end at \(t\). Only the known target-date calendar features are supplied for the future step; its observed predictor values are not supplied. Each exported row records `origin_date`, `target_date`, `lead`/`horizon`, `forecast_mode`, actual and predicted values.
+
+`data/intermediate/trading_calendar.csv` contains the 3,971 dated market rows from `data/raw/institution_market_data_daily.csv` (2007-12-27 through 2024-04-30), sorted and deduplicated. Leads count Chinese trading sessions, rather than calendar days or rows remaining after a missing-data filter. A sample is omitted when its look-back is not consecutive in this calendar or its exact terminal target is unavailable. Direct Informer splits are determined by target-row boundaries (70% training, 10% validation, 20% test); scalers fit only the training rows. Validation origins must be at or after the final training row, and test origins must be at or after the final validation row; earlier cross-boundary origins are omitted. The existing look-back lengths and architecture/optimizer settings are retained.
+
+Direct outputs and checkpoints use separate paths and lead-specific setting names. The legacy `custom` datasets remain available for historical replication, but no active one-day or five-day configuration selects them. Direct unseen-future `--do_predict` is rejected rather than falling back to the legacy next-row prediction dataset.
+
 ### 7. Run comparison models
 
 ```powershell
@@ -132,7 +138,17 @@ python code/07_run_model_comparison.py --config configs/07_model_comparison.json
 python code/07_run_model_comparison.py --config configs/07_model_comparison.json --job one_step --dry-run
 ```
 
-The comparison design includes persistence, AR(1), exponential smoothing, gradient boosting regression, and PatchTST. Their predictions are aligned with the archived Informer predictions by forecast origin, target date, and horizon. The current PatchTST implementation uses one multivariate input window containing aggregate SR history and all 16 configured non-target predictors. Each channel is patch-encoded with shared Transformer weights, and the joint prediction head uses all 17 channels to forecast aggregate SR. This code correction does not regenerate or overwrite the archived prediction and evaluation files.
+The comparison design includes persistence, AR(1), exponential smoothing, gradient boosting regression, and PatchTST. GBR and the neural comparator heads learn one terminal target at the requested lead. AR(1) iterates its fitted one-session recurrence to that lead; persistence and ETS produce their terminal forecasts from observations available at the origin. The current PatchTST implementation uses one multivariate input window containing aggregate SR history and all 16 configured non-target predictors. Each channel is patch-encoded with shared Transformer weights, and the scalar prediction head uses all 17 channels to forecast aggregate SR.
+
+Comparators use the configured 70% raw chronological training cutoff, fit scalers and deterministic-model parameters only before that cutoff, and exclude training labels crossing it. Their evaluation predictions are restricted to the exact origin/target/lead keys supplied by the direct Informer test archive. Input archives must declare `forecast_mode=direct` (or `direct_terminal_target`) and contain explicit origin and lead metadata; the calendar and actual values are checked against the forecasting inputs. Copy a newly generated direct Informer `test_results.csv` to `data/intermediate/informer_direct_1d.csv` or `informer_direct_5d.csv` as appropriate. Do not relabel an old joint-output archive as direct. The active comparison and Stage 8 evaluation outputs use `results/direct/`.
+
+This source correction does not run training, regenerate the archived paper results, or change their provenance. Files under `artifacts/` still reproduce the historical submitted tables and figures. The original DM implementation and its documented effective-horizon-one convention are unchanged by the forecast-target correction; updating that evaluation convention is a separate methodological decision.
+
+Run the direct-target contract checks in an environment with the repository dependencies installed:
+
+```powershell
+python -m unittest discover -s tests -p "test_direct_*.py" -v
+```
 
 ### 8. Evaluate predictive accuracy
 

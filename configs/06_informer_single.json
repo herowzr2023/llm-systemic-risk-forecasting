@@ -2,7 +2,7 @@
   "main_script": "libs/informer/main_informer.py",
   "args": {
     "model": "informer",
-    "data": "custom_sen",
+    "data": "direct",
     "root_path": "outputs/05_forecasting_datasets",
     "path": "ALL_final_data_with_sen_full_predictors.csv",
     "predict_col": "ALL_CoVaR",
@@ -21,6 +21,10 @@
     "embed": "timeF",
     "scaler": "minmax",
     "itr": 1,
-    "des": "aggregate_1d_public"
+    "des": "direct_h1_aggregate_public",
+    "lead": 1,
+    "calendar_path": "data/intermediate/trading_calendar.csv",
+    "results_dir": "results/direct_h1_h5",
+    "checkpoints": "checkpoints/direct_h1_h5"
   }
 }

@@ -110,7 +110,10 @@ def setting_for_job(raw: dict, job: dict, variant: dict, bank: str | None, itera
         "des": args["des"],
         "itr": "1",
     }
-    return SETTING_TEMPLATE.format(**values)
+    setting = SETTING_TEMPLATE.format(**values)
+    if args['data'] == 'direct':
+        setting += f"_lead{args['lead']}"
+    return setting
 
 
 def run_informer_command(command: list[str], execute: bool) -> None:
