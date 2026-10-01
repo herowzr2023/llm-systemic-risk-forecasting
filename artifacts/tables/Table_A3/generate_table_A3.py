@@ -7,8 +7,6 @@ ROOT = Path(__file__).resolve().parent
 INDICATORS = [
     ("Emotional_Skew", "Sentiment direction"),
     ("Total_Count", "Attention-based intensity"),
-    ("Weighted_Emotional_Skew_Read", "Exposure-based intensity"),
-    ("Weighted_Emotional_Skew_Comment", "Engagement-based intensity"),
 ]
 
 
